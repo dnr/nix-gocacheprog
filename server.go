@@ -7,6 +7,15 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
+	"time"
+)
+
+const (
+	// exit server after this much idle time
+	idleTime = time.Hour
+	// delete files that are this old
+	cacheTTL = 60 * 24 * time.Hour
 )
 
 func getSystemdSocket() (net.Listener, error) {
@@ -26,6 +35,28 @@ func getSystemdSocket() (net.Listener, error) {
 	return listener, nil
 }
 
+func checkIdle(activity chan struct{}, idle time.Duration, fn func()) {
+	for {
+		select {
+		case <-activity:
+		case <-time.After(idle):
+			fn()
+		}
+	}
+}
+
+func cleanBuildDirs(cacheDir string) {
+	ents, err := os.ReadDir(cacheDir)
+	if err != nil {
+		return
+	}
+	for _, ent := range ents {
+		if strings.HasPrefix(ent.Name(), BuildIDPrefix) {
+			os.RemoveAll(filepath.Join(cacheDir, ent.Name()))
+		}
+	}
+}
+
 func serverMain() {
 	listener, err := getSystemdSocket()
 	if err != nil {
@@ -40,14 +71,23 @@ func serverMain() {
 	os.MkdirAll(objDir, 0755)
 	dc := &DiskCache{Dir: objDir}
 
+	exitServer := func() {
+		cleanBuildDirs(cacheDir)
+		dc.Clean(cacheTTL)
+		os.Exit(0)
+	}
+
+	activity := make(chan struct{}, 1)
+	go checkIdle(activity, idleTime, exitServer)
+
 	// TODO: shut down after a while
 	for {
+		activity <- struct{}{}
 		conn, err := listener.Accept()
 		if err != nil {
 			log.Println("Accept:", err)
 			continue
 		}
-		log.Println("new connection")
 
 		var p *Process
 		p = &Process{
@@ -57,7 +97,7 @@ func serverMain() {
 			Get:      dc.Get,
 			Put:      dc.Put,
 			Close: func() error {
-				log.Printf("closed: %d gets (%d hits, %d misses, %d errors); %d puts (%d errors)",
+				log.Printf("cache: %d gets (%d hits, %d misses, %d errors); %d puts (%d errors)",
 					p.Gets.Load(), p.GetHits.Load(), p.GetMisses.Load(), p.GetErrors.Load(), p.Puts.Load(), p.PutErrors.Load())
 				return nil
 			},
@@ -68,6 +108,7 @@ func serverMain() {
 				log.Println("run returned", err)
 			}
 			conn.Close()
+			activity <- struct{}{}
 		}()
 	}
 }

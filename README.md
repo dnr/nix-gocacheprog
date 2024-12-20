@@ -110,7 +110,8 @@ The overlay sets up:
 
 ## TODO
 
-- Prune the cache sometimes
+- Cache size limit
+- Access-based TTL
 - Flake (contributions welcome)
 - Extend over the network
 - Make it work with `sandbox = false` (see [this issue](https://github.com/NixOS/nix/issues/2985))

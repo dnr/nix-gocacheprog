@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -98,6 +99,30 @@ func (dc *DiskCache) Put(ctx context.Context, actionID, objectID string, size in
 		return "", err
 	}
 	return file, nil
+}
+
+func (dc *DiskCache) Clean(ttl time.Duration) {
+	// TODO: this is really hacky, it should use access time, not mod time
+	f, err := os.Open(dc.Dir)
+	if err != nil {
+		return
+	}
+	now := time.Now()
+	for {
+		ents, err := f.ReadDir(1000)
+		if errors.Is(err, io.EOF) || len(ents) == 0 {
+			break
+		}
+		for _, ent := range ents {
+			fi, err := ent.Info()
+			if err != nil {
+				continue
+			}
+			if now.Sub(fi.ModTime()) > ttl {
+				os.Remove(filepath.Join(dc.Dir, fi.Name()))
+			}
+		}
+	}
 }
 
 func writeAtomic(dest string, r io.Reader) (int64, error) {
