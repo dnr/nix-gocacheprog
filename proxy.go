@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
@@ -109,9 +110,9 @@ func (h *proxyHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 
-		if err, tryCopy := h.putAndWrite(w, req, res, actionID); err != nil {
+		if err, tryCopyOnError := h.putAndWrite(w, req, res, actionID); err != nil {
 			log.Println("put error", err)
-			if tryCopy {
+			if tryCopyOnError {
 				io.Copy(w, res.Body)
 			}
 			return
@@ -165,36 +166,33 @@ func (h *proxyHandler) getAndWrite(w http.ResponseWriter, actionID []byte) error
 }
 
 func (h *proxyHandler) putAndWrite(w http.ResponseWriter, req *http.Request, res *http.Response, actionID []byte) (error, bool) {
-	var buf bytes.Buffer
-	buf.Grow(headerPrefixSize)
-	if err := json.NewEncoder(&buf).Encode(res.Header); err != nil {
-		return err, true
-	} else if buf.Len() > headerPrefixSize {
-		return errors.New("headers are too big"), true
-	}
-	for buf.Len() < headerPrefixSize {
-		buf.WriteByte('\n')
+	if res.ContentLength < 0 {
+		return errors.New("can't cache without ContentLength"), true
 	}
 
-	// copy the rest and capture
-	tr := io.TeeReader(res.Body, &buf)
-	if _, err := io.Copy(w, tr); err != nil {
-		return err, false
+	var hbuf bytes.Buffer
+	hbuf.Grow(headerPrefixSize)
+	if err := json.NewEncoder(&hbuf).Encode(res.Header); err != nil {
+		return err, true
+	} else if hbuf.Len() > headerPrefixSize {
+		return errors.New("headers are too big"), true
+	}
+	for hbuf.Len() < headerPrefixSize {
+		hbuf.WriteByte('\n')
 	}
 
 	// if we got this far, the client (Go) should accept the response, any errors from here are
 	// just our problem.
 
-	// put in cache
-	hsh := sha256.New()
-	hsh.Write(buf.Bytes())
-	objectID := hsh.Sum(nil)[:24]
-	// log.Printf("writing %d bytes to cache", buf.Len())
+	// we want to stream through so use a random id. go does its own checksumming.
+	objectID := make([]byte, 24)
+	rand.Read(objectID)
 
-	if res, err := h.cc.put(actionID, objectID, buf.Bytes()); err != nil {
+	concat := io.MultiReader(&hbuf, io.TeeReader(res.Body, w))
+	if cacheRes, err := h.cc.put(actionID, objectID, int64(hbuf.Len())+res.ContentLength, concat); err != nil {
 		return err, false
-	} else if res.Err != "" {
-		return errors.New(res.Err), false
+	} else if cacheRes.Err != "" {
+		return errors.New(cacheRes.Err), false
 	}
 	return nil, false
 }

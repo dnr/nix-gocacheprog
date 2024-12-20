@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -86,7 +87,7 @@ func (cc *CacheClient) get(actionID []byte) (*Response, error) {
 	return res, nil
 }
 
-func (cc *CacheClient) put(actionID, objectID, body []byte) (*Response, error) {
+func (cc *CacheClient) put(actionID, objectID []byte, size int64, body io.Reader) (*Response, error) {
 	cc.lock.Lock()
 
 	cc.reqid++
@@ -95,12 +96,22 @@ func (cc *CacheClient) put(actionID, objectID, body []byte) (*Response, error) {
 		Command:  CmdPut,
 		ActionID: actionID,
 		ObjectID: objectID,
-		BodySize: int64(len(body)),
+		BodySize: size,
 	}
 	if err := cc.je.Encode(req); err != nil {
 		cc.lock.Unlock()
 		return nil, err
-	} else if err := cc.je.Encode(body); err != nil {
+	} else if err = cc.bw.WriteByte('"'); err != nil {
+		cc.lock.Unlock()
+		return nil, err
+	} else if enc := base64.NewEncoder(base64.StdEncoding, cc.bw); false {
+	} else if _, err := io.Copy(enc, body); err != nil {
+		cc.lock.Unlock()
+		return nil, err
+	} else if err = enc.Close(); err != nil {
+		cc.lock.Unlock()
+		return nil, err
+	} else if err = cc.bw.WriteByte('"'); err != nil {
 		cc.lock.Unlock()
 		return nil, err
 	} else if err = cc.bw.Flush(); err != nil {
