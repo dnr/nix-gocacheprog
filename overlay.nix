@@ -8,12 +8,26 @@
     name = "nix-gocacheprog-hook";
   } (final.writeScript "nix-gocacheprog-hook.sh" ''
     _nixGocacheprogHook() {
-      if [[ -x ${const.SandboxCacheDir}/client ]]; then
-        echo "Setting GOCACHEPROG"
-        export GOCACHEPROG=${const.SandboxCacheDir}/client
-      else
+      local client=${const.SandboxCacheDir}/client
+      if [[ ! -x $client ]]; then
         echo "gocacheprog client not found, skipping GOCACHEPROG"
+        return
       fi
+
+      export GOCACHEPROG=$client
+      echo "Setting GOCACHEPROG to $GOCACHEPROG"
+
+      # default value from https://go.dev/ref/mod
+      case "''${GOPROXY:=https://proxy.golang.org,direct}" in
+        off|file*) # main build, do nothing
+          ;;
+        *) # module build
+          $client -mode goproxy &
+          export GOPROXY="http://localhost${const.ProxyListen},$GOPROXY"
+          echo "Using nix-gocacheprog module proxy"
+          echo "Setting GOPROXY to $GOPROXY"
+          ;;
+      esac
     }
     postConfigureHooks+=(_nixGocacheprogHook)
   '');

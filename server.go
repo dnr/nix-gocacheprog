@@ -58,6 +58,8 @@ func cleanBuildDirs(cacheDir string) {
 }
 
 func serverMain() {
+	log.SetFlags(log.Lshortfile)
+
 	listener, err := getSystemdSocket()
 	if err != nil {
 		log.Fatalln("get listen socket:", err)

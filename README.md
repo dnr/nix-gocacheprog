@@ -1,21 +1,24 @@
 # nix-gocacheprog
 
-**Use Go build caching inside Nix builds**
+**Use Go build and module caching inside Nix builds**
 
-Go build and tool caching is great, but it doesn't work in Nix builds because of
-the sandbox.
+Go build and module caching is great, but it doesn't work in Nix builds because
+of the sandbox.
 
 `nix-gocacheprog` pokes a hole in the sandbox to make it work. Iterating on Go
 builds in Nix is fast again!
 
-Note: We're talking about the build cache here (object files and binaries), not
-the module cache (dependencies' source code). The existing tools handle
-dependencies fairly well.
-
-Also note: Only do this if you trust that Go's build cache is accurate (this
+Note: Only do this if you trust that Go's build cache is accurate (this
 seems pretty well-accepted). Maybe don't do it on your release builds.
 
 This is just single-machine caching, nothing over the network yet.
+
+`nix-gocacheprog` *also* caches module downloads, by routing them through the
+build cache with a module proxy.
+This isn't as big of a win as caching builds, since `buildGoModule` and
+`gomod2nix` already cache modules by using a separate derivation, but it does
+help if you're using `buildGoModule` with `vendorHash` and add a single
+dependency: all the others won't be downloaded again.
 
 Only for NixOS for now, but it shouldn't be that hard to make it work on other
 systems that Nix runs on (contributions welcome).
@@ -107,6 +110,19 @@ The overlay sets up:
   - Use the experiment Go build.
   - Automatically add `nixGocacheprogHook` to `nativeBuildInputs`.
 
+### Module cache
+
+The above sets up caching for builds. What about the module cache?
+
+The module cache uses a separate mechanism and protocol.
+To intercept it, we can use a module proxy.
+The proxy mostly passes things through to an upstream proxy
+(`https://proxy.golang.org`), but for `go.mod` and `.zip` files (the immutable ones),
+it uses the build cache.
+
+This works in the "module derivation" of `buildGoModule`, which is a FOD.
+The "main derivation" sets `GOPROXY=off`.
+
 
 ## TODO
 
@@ -116,7 +132,7 @@ The overlay sets up:
 - Extend over the network
 - Make it work with `sandbox = false` (see [this issue](https://github.com/NixOS/nix/issues/2985))
 - Make it work with non-NixOS systems
-- Think about the module cache also
+- Make it work with `gomod2nix`?
 
 
 ## Comparisons
@@ -138,6 +154,7 @@ Some differences:
 - should provide more speedup
 - caches build results of the main project also
 - caches everything including test runs
+- caches module downloads too
 - after Go 1.24, will cache binary linking results also
 - requires system-level changes (`pre-build-hook`)
 - is technically impure, but we generally trust the Go build tool

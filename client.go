@@ -11,7 +11,7 @@ import (
 	"sync"
 )
 
-func clientMain() {
+func initClient() *net.UnixConn {
 	// find build id
 	dirents, err := os.ReadDir(SandboxCacheDir)
 	if err != nil {
@@ -41,8 +41,13 @@ func clientMain() {
 	je.Encode(&Hello{BuildID: buildID, Phase: PhaseBuild})
 	bw.Flush()
 
+	return c.(*net.UnixConn)
+}
+
+func clientMain() {
+	uc := initClient()
+
 	// transfer back and forth
-	uc := c.(*net.UnixConn)
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() {

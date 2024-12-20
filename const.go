@@ -3,6 +3,7 @@ package main
 var (
 	SocketDir       = "<set in const.nix>"
 	SandboxCacheDir = "<set in const.nix>"
+	ProxyListen     = "<set in const.nix>"
 )
 
 const (
