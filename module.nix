@@ -6,10 +6,6 @@ in
 {
   nix.settings.pre-build-hook = "${pkg}/bin/hook";
 
-  nixpkgs.overlays = [
-    (import ./overlay.nix)
-  ];
-
   systemd.sockets.nix-gocacheprog = {
     description = "Server for Nix Go caching";
     wantedBy = [ "sockets.target" ];

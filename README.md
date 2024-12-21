@@ -27,12 +27,7 @@ systems that Nix runs on (contributions welcome).
 ## Usage
 
 1. Import [module.nix](module.nix) in your NixOS config.
-1. Add [overlay.nix](overlay.nix) to your NixOS config or to your project.
-1. - For Go 1.21 through 1.23:
-     - Use `buildGo122ModuleCached` instead of `buildGo122Module`
-   - For Go 1.24+, _either_:
-     - Use `buildGo124ModuleCached` instead of `buildGo124Module`
-     - Add `nixGocacheprogHook` to your `nativeBuildInputs`.
+1. Add [overlay.nix](overlay.nix) to your project's overlays.
 
 ### Example
 
@@ -53,10 +48,7 @@ give you the idea.)
 { pkgs ? import <nixpkgs> { config = {}; overlays = [
   (import "${fetchTarball "https://github.com/dnr/nix-gocacheprog/archive/main.tar.gz"}/overlay.nix")
 ]; } }:
-let
-  # This lets it work even if the attribute is missing:
-  buildGoModule = pkgs.buildGo123ModuleCached or pkgs.buildGo123Module;
-in buildGoModule {
+buildGoModule {
   name = "myproject-1.2.3";
   vendorHash = "...";
   src = pkgs.lib.cleanSource ./.;
@@ -100,16 +92,12 @@ The module:
 
 - Sets `nix.settings.pre-build-hook`.
 - Sets up the daemon, including socket activation.
-- Adds a nixpkgs overlay to expose the modified builders.
-  Your project may not include system overlays, so you may have to include it explicitly there.
 
 The overlay sets up:
 
-- Variants of `go_1_21`, `go_1_22`, and `go_1_23` built with `GOEXPERIMENT=cacheprog`.
-- `nixGocacheprogHook` that you can add to `nativeBuildInputs`.
-- `buildGo121ModuleCached` (and `122` and `123`) that work like `buildGo121Module` but:
-  - Use the gocacheprog-enabled Go build.
-  - Automatically add `nixGocacheprogHook` to `nativeBuildInputs`.
+- Build `go_1_21`, `go_1_22`, and `go_1_23` with `GOEXPERIMENT=cacheprog`.
+- Add `nixGocacheprogHook` to set up `GOCACHEPROG`.
+- Make `buildGoModule` add `nixGocacheprogHook` to `nativeBuildInputs`.
 
 `nixGocacheprogHook` does:
 
