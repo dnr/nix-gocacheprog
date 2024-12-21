@@ -14,6 +14,7 @@ in
 
   systemd.services.nix-gocacheprog = {
     description = "Server for Nix Go caching";
+    path = [ pkgs.util-linux ]; # for findmnt
     serviceConfig = {
       ExecStart = "${pkg}/bin/nix-gocacheprog -mode server";
       CacheDirectory = "nix-gocacheprog";

@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"log"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -57,6 +59,14 @@ func cleanBuildDirs(cacheDir string) {
 	}
 }
 
+func isMountedNoatime(dir string) bool {
+	out, err := exec.Command("findmnt", "-T", dir, "-o", "options").Output()
+	if err != nil {
+		return false
+	}
+	return bytes.Contains(out, []byte("noatime"))
+}
+
 func serverMain() {
 	log.SetFlags(log.Lshortfile)
 
@@ -71,7 +81,7 @@ func serverMain() {
 	}
 	objDir := filepath.Join(cacheDir, "obj")
 	os.MkdirAll(objDir, 0755)
-	dc := &DiskCache{Dir: objDir}
+	dc := &DiskCache{Dir: objDir, ManualATime: isMountedNoatime(cacheDir)}
 
 	exitServer := func() {
 		cleanBuildDirs(cacheDir)

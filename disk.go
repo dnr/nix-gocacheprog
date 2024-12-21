@@ -11,6 +11,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"syscall"
 	"time"
 )
 
@@ -23,8 +24,9 @@ type indexEntry struct {
 }
 
 type DiskCache struct {
-	Dir     string
-	Verbose bool
+	Dir         string
+	Verbose     bool
+	ManualATime bool
 }
 
 func (dc *DiskCache) Get(ctx context.Context, actionID string) (outputID, diskPath string, err error) {
@@ -39,6 +41,7 @@ func (dc *DiskCache) Get(ctx context.Context, actionID string) (outputID, diskPa
 		}
 		return "", "", err
 	}
+	dc.markAccess(actionFile)
 	var ie indexEntry
 	if err := json.Unmarshal(ij, &ie); err != nil {
 		log.Printf("Warning: JSON error for action %q: %v", actionID, err)
@@ -48,7 +51,9 @@ func (dc *DiskCache) Get(ctx context.Context, actionID string) (outputID, diskPa
 		// Protect against malicious non-hex OutputID on disk
 		return "", "", nil
 	}
-	return ie.OutputID, filepath.Join(dc.Dir, fmt.Sprintf("o-%v", ie.OutputID)), nil
+	outputFile := filepath.Join(dc.Dir, fmt.Sprintf("o-%v", ie.OutputID))
+	dc.markAccess(outputFile)
+	return ie.OutputID, outputFile, nil
 }
 
 func (dc *DiskCache) OutputFilename(objectID string) string {
@@ -102,27 +107,38 @@ func (dc *DiskCache) Put(ctx context.Context, actionID, objectID string, size in
 }
 
 func (dc *DiskCache) Clean(ttl time.Duration) {
-	// TODO: this is really hacky, it should use access time, not mod time
 	f, err := os.Open(dc.Dir)
 	if err != nil {
 		return
 	}
-	now := time.Now()
+	expire := time.Now().Unix() - int64(ttl.Seconds())
 	for {
 		ents, err := f.ReadDir(1000)
 		if errors.Is(err, io.EOF) || len(ents) == 0 {
 			break
 		}
 		for _, ent := range ents {
-			fi, err := ent.Info()
-			if err != nil {
+			if fi, err := ent.Info(); err != nil {
 				continue
-			}
-			if now.Sub(fi.ModTime()) > ttl {
+			} else if st, ok := fi.Sys().(*syscall.Stat_t); !ok {
+				continue
+			} else if st.Atim.Sec < expire {
 				os.Remove(filepath.Join(dc.Dir, fi.Name()))
 			}
 		}
 	}
+}
+
+func (dc *DiskCache) markAccess(path string) {
+	if !dc.ManualATime {
+		return
+	}
+	var st syscall.Stat_t
+	now := time.Now().Unix()
+	if syscall.Stat(path, &st) != nil || now-st.Atim.Sec < 86400 {
+		return
+	}
+	_ = syscall.UtimesNano(path, []syscall.Timespec{{now, 0}, st.Mtim})
 }
 
 func writeAtomic(dest string, r io.Reader) (int64, error) {
