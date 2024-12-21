@@ -26,13 +26,13 @@ systems that Nix runs on (contributions welcome).
 
 ## Usage
 
-- Import [module.nix](module.nix) in your NixOS config.
-- Add [overlay.nix](overlay.nix) to your NixOS config or to your project.
-- For Go 1.21 through 1.23:
-  - Use `buildGo122ModuleCached` instead of `buildGo122Module`
-- For Go 1.24+, _either_:
-  - Use `buildGo124ModuleCached` instead of `buildGo124Module`
-  - Add `nixGocacheprogHook` to your `nativeBuildInputs`.
+1. Import [module.nix](module.nix) in your NixOS config.
+1. Add [overlay.nix](overlay.nix) to your NixOS config or to your project.
+1. - For Go 1.21 through 1.23:
+     - Use `buildGo122ModuleCached` instead of `buildGo122Module`
+   - For Go 1.24+, _either_:
+     - Use `buildGo124ModuleCached` instead of `buildGo124Module`
+     - Add `nixGocacheprogHook` to your `nativeBuildInputs`.
 
 ### Example
 
@@ -56,13 +56,10 @@ give you the idea.)
 let
   # This lets it work even if the attribute is missing:
   buildGoModule = pkgs.buildGo123ModuleCached or pkgs.buildGo123Module;
-in
-buildGoModule {
-  pname = "myproject";
-  version = "0.0.11";
-  vendorHash = null;
+in buildGoModule {
+  name = "myproject-1.2.3";
+  vendorHash = "...";
   src = pkgs.lib.cleanSource ./.;
-  subPackages = [ "cmd/myproject" ];
 }
 ```
 
@@ -99,16 +96,25 @@ build can only see its own files (files that it knows the input hash of).
 
 ### Module and overlay
 
-The module sets `pre-build-hook`, sets up the daemon, and adds a nixpkgs overlay
-to expose the modified builders.
+The module:
+
+- Sets `nix.settings.pre-build-hook`.
+- Sets up the daemon, including socket activation.
+- Adds a nixpkgs overlay to expose the modified builders.
+  Your project may not include system overlays, so you may have to include it explicitly there.
 
 The overlay sets up:
 
 - Variants of `go_1_21`, `go_1_22`, and `go_1_23` built with `GOEXPERIMENT=cacheprog`.
 - `nixGocacheprogHook` that you can add to `nativeBuildInputs`.
-- `buildGo121ModuleCached` (and 122 and 123) that work like `buildGo121Module` but:
-  - Use the experiment Go build.
+- `buildGo121ModuleCached` (and `122` and `123`) that work like `buildGo121Module` but:
+  - Use the gocacheprog-enabled Go build.
   - Automatically add `nixGocacheprogHook` to `nativeBuildInputs`.
+
+`nixGocacheprogHook` does:
+
+- Checks if it looks like the pre-build-hook has run. If not, do nothing.
+- Set `GOCACHEPROG` to our binary (in client mode).
 
 ### Module cache
 
@@ -117,11 +123,18 @@ The above sets up caching for builds. What about the module cache?
 The module cache uses a separate mechanism and protocol.
 To intercept it, we can use a module proxy.
 The proxy mostly passes things through to an upstream proxy
-(`https://proxy.golang.org`), but for `.mod` and `.zip` files (the immutable ones),
+(`https://proxy.golang.org` by default, but it respects `GOPROXY`),
+but for `.mod` and `.zip` files (the immutable ones),
 it uses the build cache.
 
 This works in the "module derivation" of `buildGoModule`, which is a FOD.
-The "main derivation" sets `GOPROXY=off`.
+The "main derivation" sets `GOPROXY=off` so this doesn't apply.
+
+To support this, `nixGocacheprogHook` also does:
+
+- If `GOPROXY` is `off` or `file:...`, do nothing.
+- Runs the binary in goproxy mode in the background, listening on a localhost port.
+- Sets `GOPROXY` to point to that proxy.
 
 
 ## TODO
@@ -145,7 +158,7 @@ them in a separate derivation that is a dependency of your build.
 Some differences:
 
 `build-go-cache`
-- is more pure
+- is pure
 - only caches dependency builds
 - requires an extra step to list external packages and an extra file in the repo
 - works anywhere
@@ -156,6 +169,22 @@ Some differences:
 - caches everything including test runs
 - caches module downloads too
 - after Go 1.24, will cache binary linking results also
+- requires system-level changes (`pre-build-hook`)
+- is technically impure, but we generally trust the Go build tool
+- is only set up for NixOS right now, but should work elsewhere with a little effort
+
+
+### https://github.com/adisbladis/gobuild.nix
+
+`gobuild.nix` also uses `GOCACHEPROG` but in a purer way, with separate
+derivations per module that contain subsets of the cache:
+
+`gobuild.nix`
+- is pure
+- overhauls the Nix Go build system
+
+`nix-gocacheprog`
+- is a drop-in replacement for `buildGoModule`
 - requires system-level changes (`pre-build-hook`)
 - is technically impure, but we generally trust the Go build tool
 - is only set up for NixOS right now, but should work elsewhere with a little effort
