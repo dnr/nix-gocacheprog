@@ -117,7 +117,7 @@ The above sets up caching for builds. What about the module cache?
 The module cache uses a separate mechanism and protocol.
 To intercept it, we can use a module proxy.
 The proxy mostly passes things through to an upstream proxy
-(`https://proxy.golang.org`), but for `go.mod` and `.zip` files (the immutable ones),
+(`https://proxy.golang.org`), but for `.mod` and `.zip` files (the immutable ones),
 it uses the build cache.
 
 This works in the "module derivation" of `buildGoModule`, which is a FOD.
