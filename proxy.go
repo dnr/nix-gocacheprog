@@ -20,6 +20,7 @@ import (
 // TODO: this is kind of gross but works ok for now
 const headerPrefixSize = 4096
 const proxyCacheKeyBytes = 24
+const proxyDebug = false
 
 var skipReturnHeaders = map[string]bool{
 	"Alt-Svc":                   true,
@@ -73,10 +74,14 @@ func (h *proxyHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if actionID != nil {
 		err := h.getAndWrite(w, actionID)
 		if err == nil {
-			// log.Printf("hit %s", path)
+			if proxyDebug {
+				log.Printf("hit %s", path)
+			}
 			return
 		}
-		// log.Printf("miss %s (%s)", path, err)
+		if proxyDebug {
+			log.Printf("miss %s (%s)", path, err)
+		}
 	}
 
 	// nope, try upstreams
@@ -84,7 +89,9 @@ func (h *proxyHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		islast := i == len(h.upstreams)-1
 
 		try := up.JoinPath(path).String()
-		// log.Printf("querying %s", try)
+		if proxyDebug {
+			log.Printf("querying %s", try)
+		}
 		outReq, err := http.NewRequestWithContext(req.Context(), http.MethodGet, try, nil)
 		if err != nil {
 			log.Fatal(err)
@@ -121,6 +128,9 @@ func (h *proxyHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		defer res.Body.Close()
 		copyHeadersReturn(w, res)
 		if actionID == nil {
+			if proxyDebug {
+				log.Printf("passthrough %s", path)
+			}
 			io.Copy(w, res.Body)
 			return
 		}
