@@ -8,7 +8,7 @@ of the sandbox.
 `nix-gocacheprog` pokes a hole in the sandbox to make it work. Iterating on Go
 builds in Nix is fast again!
 
-Note: Only do this if you trust that Go's build cache is accurate (this
+Note: Only use this if you trust that Go's build cache is accurate (this
 seems pretty well-accepted). Maybe don't do it on your release builds.
 
 This is just single-machine caching, nothing over the network yet.
@@ -132,50 +132,43 @@ To support this, `nixGocacheprogHook` also does:
 - Extend over the network
 - Make it work with `sandbox = false` (see [this issue](https://github.com/NixOS/nix/issues/2985))
 - Make it work with non-NixOS systems
-- Make it work with `gomod2nix`?
+- Make it work with `gomod2nix` and other builders (should just be able to add `nixGocacheprogHook`)
 
 
 ## Comparisons
 
-### https://github.com/numtide/build-go-cache
+This main difference between this and other Go building alternatives is that
+this is a quick and dirty solution to speed up Go incremental builds inside of
+Nix during development. It's impure and relies on a system-level cache daemon.
+That said, it's easy to drop into existing projects.
 
-`build-go-cache` takes a different approach: it pre-builds dependencies and puts
-them in a separate derivation that is a dependency of your build.
+More details:
 
-Some differences:
-
-`build-go-cache`
-- is pure
-- only caches dependency builds
+[`build-go-cache`](https://github.com/numtide/build-go-cache)
+- pre-builds dependencies and puts them in a separate derivation that is a dependency of your build
 - requires an extra step to list external packages and an extra file in the repo
+- requires some changes to project Go build, but is compatible with `buildGoModule`
+- module granularity
+- only caches dependency builds
+- is pure
 - works anywhere
 
-`nix-gocacheprog`
-- should provide more speedup
-- caches build results of the main project also
-- caches everything including test runs
-- caches module downloads too
-- after Go 1.24, will cache binary linking results also
-- requires system-level changes (`pre-build-hook`)
-- is technically impure, but we generally trust the Go build tool
-- is only set up for NixOS right now, but should work elsewhere with a little effort
-
-
-### https://github.com/adisbladis/gobuild.nix
-
-`gobuild.nix` also uses `GOCACHEPROG` but in a purer way, with separate
-derivations per module that contain subsets of the cache:
-
-`gobuild.nix`
+[`gobuild.nix`](https://github.com/adisbladis/gobuild.nix)
+- also uses `GOCACHEPROG` but in a purer way, with separate derivations per module that contain subsets of the cache
+- replacement for the entire Nix Go build system
+- module granularity
+- only caches dependency builds
 - is pure
-- overhauls the Nix Go build system
+- works anywhere
 
-`nix-gocacheprog`
-- is a drop-in replacement for `buildGoModule`
-- requires system-level changes (`pre-build-hook`)
-- is technically impure, but we generally trust the Go build tool
+[`nix-gocacheprog`](https://github.com/dnr/nix-gocacheprog) (this project)
+- punches hole in sandbox for cache inputs/outputs
+- caches at file granularity
+- also caches build results of the main module, test runs, and module downloads
+- easy to drop-in to any project, only overlay required (or build hook)
+- but requires system-level changes (`pre-build-hook` in `nix.conf`)
+- is impure, but we generally trust the Go build tool
 - is only set up for NixOS right now, but should work elsewhere with a little effort
-
 
 ## LICENSE
 
