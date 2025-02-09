@@ -8,6 +8,9 @@
     name = "nix-gocacheprog-hook";
   } (final.writeScript "nix-gocacheprog-hook.sh" ''
     _nixGocacheprogHook() {
+      [[ $_nixGocacheprogHook_done ]] && return
+      _nixGocacheprogHook_done=1
+
       local client=${const.SandboxCacheDir}/client
       if [[ ! -x $client ]]; then
         echo "gocacheprog client not found, skipping GOCACHEPROG"
