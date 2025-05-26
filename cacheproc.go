@@ -45,10 +45,10 @@ type Process struct {
 	Get func(ctx context.Context, actionID string) (outputID, diskPath string, _ error)
 
 	// Put optionally specifies a func to add something to the cache.
-	// The actionID and objectID is a lowercase hex string of unspecified format or length.
+	// The actionID and outputID is a lowercase hex string of unspecified format or length.
 	// On success, diskPath must be the absolute path to a regular file.
 	// If nil, cmd/go may write to disk elsewhere as needed.
-	Put func(ctx context.Context, actionID, objectID string, size int64, r io.Reader) (diskPath string, _ error)
+	Put func(ctx context.Context, actionID, outputID string, size int64, r io.Reader) (diskPath string, _ error)
 
 	// Close optionally specifies a func to run when the cmd/go tool is
 	// shutting down.
@@ -117,6 +117,11 @@ func (p *Process) Run() error {
 				return nil
 			}
 			return err
+		}
+		// For Go1.23 backward compatibility. TODO: remove in Go1.25.
+		// https://github.com/bradfitz/go-tool-cache/pull/10
+		if len(req.OutputID) == 0 && len(req.ObjectID) != 0 {
+			req.OutputID = req.ObjectID
 		}
 		if req.Command == CmdPut && req.BodySize > 0 {
 			// TODO(bradfitz): stream this and pass a checksum-validating
@@ -213,12 +218,12 @@ func (p *Process) handleGet(ctx context.Context, req *Request, res *Response) (r
 }
 
 func (p *Process) handlePut(ctx context.Context, req *Request, res *Response) (retErr error) {
-	actionID, objectID := fmt.Sprintf("%x", req.ActionID), fmt.Sprintf("%x", req.ObjectID)
+	actionID, outputID := fmt.Sprintf("%x", req.ActionID), fmt.Sprintf("%x", req.OutputID)
 	p.Puts.Add(1)
 	defer func() {
 		if retErr != nil {
 			p.PutErrors.Add(1)
-			log.Printf("put(action %s, obj %s, %v bytes): %v", actionID, objectID, req.BodySize, retErr)
+			log.Printf("put(action %s, obj %s, %v bytes): %v", actionID, outputID, req.BodySize, retErr)
 		}
 	}()
 	if p.Put == nil {
@@ -231,7 +236,7 @@ func (p *Process) handlePut(ctx context.Context, req *Request, res *Response) (r
 	if body == nil {
 		body = bytes.NewReader(nil)
 	}
-	diskPath, err := p.Put(ctx, actionID, objectID, req.BodySize, body)
+	diskPath, err := p.Put(ctx, actionID, outputID, req.BodySize, body)
 	if err != nil {
 		return err
 	}
